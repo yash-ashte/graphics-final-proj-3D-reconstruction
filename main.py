@@ -6,6 +6,7 @@ from camera import Camera
 from extrusion import build_room_mesh
 from floorplan_cv import extract_wall_segments
 from mesh import Mesh
+from minimap import Minimap
 from renderer import Renderer
 
 def parse_args():
@@ -41,6 +42,8 @@ def main():
 
     glfw.make_context_current(window)
     glfw.set_input_mode(window, glfw.CURSOR, glfw.CURSOR_DISABLED)
+
+    minimap = Minimap(floorplan_path)
 
     camera = Camera()
     last_time = glfw.get_time()
@@ -99,6 +102,8 @@ def main():
         )
         floor_mesh.draw()
 
+        minimap.draw(camera.pos, width, height)
+
         if current_time - last_debug_time > 1.0:
             last_debug_time = current_time
             cx, cy, cz = camera.pos
@@ -110,6 +115,7 @@ def main():
     for wall_mesh in wall_meshes:
         wall_mesh.delete()
     floor_mesh.delete()
+    minimap.cleanup()
     renderer.cleanup()
     glfw.terminate()
 
