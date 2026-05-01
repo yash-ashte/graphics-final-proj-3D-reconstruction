@@ -8,6 +8,7 @@ from floorplan_cv import extract_wall_segments
 from mesh import Mesh
 from minimap import Minimap
 from renderer import Renderer
+from classifier import classify_floorplan
 
 def parse_args():
     parser = argparse.ArgumentParser(description="2D floorplan to 3D room reconstruction MVP.")
@@ -21,9 +22,24 @@ def main():
     if floorplan_path and not os.path.exists(floorplan_path):
         print(f"[error] Floorplan path does not exist: {floorplan_path}")
         return
+    
+    wall_data = extract_wall_segments(floorplan_path)
+
+    # after wall_data is extracted
+    classification = classify_floorplan(
+        wall_data,
+        model_path=None,
+        image_path=floorplan_path if floorplan_path else None
+    )
+
+    print(f"[info] building type={classification['label']} source={classification['source']}")
+
+    mat = classification["material"]
+    wall_spec  = mat["spec_strength"]
+    wall_shine = mat["shininess"]
 
     # Precompute scene geometry before opening the window.
-    wall_data = extract_wall_segments(floorplan_path)
+    ##wall_data = extract_wall_segments(floorplan_path)
     wall_mesh_data = []
     for wall in wall_data["walls"]:
         w_vertices, w_indices = build_room_mesh([wall], wall_data["bounds"], include_floor=False)
@@ -54,14 +70,24 @@ def main():
     wall_meshes = [Mesh(v, i) for v, i in wall_mesh_data]
     floor_mesh = Mesh(floor_vertices, floor_indices)
     renderer = Renderer()
+    renderer.set_scene_textures(classification["label"])
+   ## wall_palette = [
+     ##   (0.95, 0.35, 0.35),
+       ## (0.35, 0.95, 0.35),
+       ## (0.35, 0.55, 0.95),
+       ## (0.95, 0.85, 0.35),
+        ##(0.85, 0.35, 0.95),
+       ## (0.35, 0.9, 0.9),
+    ##]
     wall_palette = [
-        (0.95, 0.35, 0.35),
-        (0.35, 0.95, 0.35),
-        (0.35, 0.55, 0.95),
-        (0.95, 0.85, 0.35),
-        (0.85, 0.35, 0.95),
-        (0.35, 0.9, 0.9),
+        (1.0, 1.0, 1.0),
+        (1.0, 1.0, 1.0),
+        (1.0, 1.0, 1.0),
+        (1.0, 1.0, 1.0),
+        (1.0, 1.0, 1.0),
+        (1.0, 1.0, 1.0),
     ]
+
     floor_material = {"color": (0.8, 0.8, 0.82), "spec_strength": 0.18, "shininess": 10.0}
 
     glfw.set_cursor_pos_callback(window, camera.mouse_callback)
@@ -91,13 +117,18 @@ def main():
 
         renderer.begin_frame()
         renderer.set_camera(view, projection, camera.pos)
+
+        renderer.use_wall()
         for idx, wall_mesh in enumerate(wall_meshes):
             wall_color = wall_palette[idx % len(wall_palette)]
-            renderer.set_material(object_color=wall_color, spec_strength=0.22, shininess=14.0)
+            renderer.set_material(color=wall_color, spec=wall_spec, shininess=wall_shine)
             wall_mesh.draw()
+
+        # draw floor with floor texture
+        renderer.use_floor()
         renderer.set_material(
-            object_color=floor_material["color"],
-            spec_strength=floor_material["spec_strength"],
+            color=floor_material["color"],
+            spec=floor_material["spec_strength"],
             shininess=floor_material["shininess"],
         )
         floor_mesh.draw()
@@ -115,8 +146,8 @@ def main():
     for wall_mesh in wall_meshes:
         wall_mesh.delete()
     floor_mesh.delete()
-    minimap.cleanup()
     renderer.cleanup()
+    minimap.cleanup()
     glfw.terminate()
 
 if __name__ == "__main__":

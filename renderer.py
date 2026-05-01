@@ -1,39 +1,26 @@
+import os
+
 import numpy as np
-from OpenGL.GL import (
-    GL_COLOR_BUFFER_BIT,
-    GL_DEPTH_BUFFER_BIT,
-    GL_DEPTH_TEST,
-    GL_LINEAR,
-    GL_REPEAT,
-    GL_RGB,
-    GL_TEXTURE0,
-    GL_TEXTURE_2D,
-    GL_TEXTURE_MAG_FILTER,
-    GL_TEXTURE_MIN_FILTER,
-    GL_TEXTURE_WRAP_S,
-    GL_TEXTURE_WRAP_T,
-    GL_UNSIGNED_BYTE,
-    GL_VERTEX_SHADER,
-    GL_FRAGMENT_SHADER,
-    GL_FALSE,
-    glActiveTexture,
-    glBindTexture,
-    glClear,
-    glClearColor,
-    glDeleteProgram,
-    glDeleteTextures,
-    glEnable,
-    glGenTextures,
-    glGetUniformLocation,
-    glTexImage2D,
-    glTexParameteri,
-    glUniform1f,
-    glUniform1i,
-    glUniform3f,
-    glUniformMatrix4fv,
-    glUseProgram,
-)
+from PIL import Image
+
+from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
+
+
+TEXTURE_MAP = {
+    "office": {
+        "wall": "assets/Concrete.jpg",
+        "floor": "assets/Office_Carpet.jpg",
+    },
+    "hallway": {
+        "wall": "assets/Brick.jpg",
+        "floor": "assets/Concrete.jpg",
+    },
+    "apartment": {
+        "wall": "assets/Hardwood.jpg",
+        "floor": "assets/Office_Carpet.jpg",
+    },
+}
 
 
 VERTEX_SHADER = """
@@ -79,19 +66,20 @@ out vec4 FragColor;
 void main() {
     vec3 ambient = 0.2 * lightColor;
 
-    vec3 norm = normalize(fragNormal);
-    vec3 lightDir = normalize(lightPos - fragPos);
-    float diff = max(dot(norm, lightDir), 0.0);
+    vec3 n = normalize(fragNormal);
+    vec3 l = normalize(lightPos - fragPos);
+    float diff = max(dot(n, l), 0.0);
     vec3 diffuse = diff * lightColor;
 
-    vec3 viewDir = normalize(viewPos - fragPos);
-    vec3 reflectDir = reflect(-lightDir, norm);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
+    vec3 v = normalize(viewPos - fragPos);
+    vec3 r = reflect(-l, n);
+    float spec = pow(max(dot(v, r), 0.0), shininess);
     vec3 specular = specStrength * spec * lightColor;
 
-    vec3 texColor = texture(tex0, fragUV).rgb;
-    vec3 finalColor = (ambient + diffuse + specular) * texColor * objectColor;
-    FragColor = vec4(finalColor, 1.0);
+    vec3 tex = texture(tex0, fragUV).rgb;
+    vec3 lighting = ambient + diffuse + specular;
+
+    FragColor = vec4(lighting * tex * objectColor, 1.0);
 }
 """
 
@@ -99,53 +87,143 @@ void main() {
 class Renderer:
     def __init__(self):
         glEnable(GL_DEPTH_TEST)
+
         self.program = compileProgram(
             compileShader(VERTEX_SHADER, GL_VERTEX_SHADER),
             compileShader(FRAGMENT_SHADER, GL_FRAGMENT_SHADER),
         )
-        self.texture = self._build_checker_texture()
+
         self.model = np.eye(4, dtype=np.float32)
 
-    def _build_checker_texture(self):
-        tex = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, tex)
+        # start with a fallback so we always have something valid
+        checker = self._make_checker()
+        self.wall_tex = checker
+        self.floor_tex = checker
+        self.active_tex = self.wall_tex
+
+    def _make_checker(self, size=64, tile=8):
+        tex_id = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, tex_id)
+
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 
-        size = 64
         img = np.zeros((size, size, 3), dtype=np.uint8)
+
+        c0 = np.array([190, 190, 190], dtype=np.uint8)
+        c1 = np.array([110, 110, 110], dtype=np.uint8)
+
         for y in range(size):
             for x in range(size):
-                if (x // 8 + y // 8) % 2 == 0:
-                    img[y, x] = np.array([190, 190, 190], dtype=np.uint8)
-                else:
-                    img[y, x] = np.array([110, 110, 110], dtype=np.uint8)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, size, size, 0, GL_RGB, GL_UNSIGNED_BYTE, img)
-        return tex
+                img[y, x] = c0 if ((x // tile + y // tile) % 2 == 0) else c1
+
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RGB,
+            size,
+            size,
+            0,
+            GL_RGB,
+            GL_UNSIGNED_BYTE,
+            img,
+        )
+
+        return tex_id
+
+    def _load_texture(self, path):
+        if not path or not os.path.exists(path):
+            print(f"[warn] texture missing: {path}")
+            return self._make_checker()
+
+        img = Image.open(path).convert("RGB")
+        data = np.array(img, dtype=np.uint8)
+        h, w = data.shape[:2]
+
+        tex_id = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, tex_id)
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RGB,
+            w,
+            h,
+            0,
+            GL_RGB,
+            GL_UNSIGNED_BYTE,
+            data,
+        )
+
+        return tex_id
+
+    def set_scene_textures(self, label):
+        cfg = TEXTURE_MAP.get(label)
+
+        if not cfg:
+            print(f"[warn] unknown label '{label}', keeping current textures")
+            return
+
+        # clean up old textures
+        glDeleteTextures(1, [self.wall_tex])
+        glDeleteTextures(1, [self.floor_tex])
+
+        self.wall_tex = self._load_texture(cfg["wall"])
+        self.floor_tex = self._load_texture(cfg["floor"])
+
+        self.active_tex = self.wall_tex
+
+        print(f"[renderer] switched to '{label}' textures")
 
     def begin_frame(self):
         glClearColor(0.08, 0.08, 0.1, 1.0)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
         glUseProgram(self.program)
+
         glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.texture)
+        glBindTexture(GL_TEXTURE_2D, self.active_tex)
         glUniform1i(glGetUniformLocation(self.program, "tex0"), 0)
 
-    def set_camera(self, view, projection, camera_pos):
-        glUniformMatrix4fv(glGetUniformLocation(self.program, "model"), 1, GL_FALSE, self.model.T)
-        glUniformMatrix4fv(glGetUniformLocation(self.program, "view"), 1, GL_FALSE, view.T)
-        glUniformMatrix4fv(glGetUniformLocation(self.program, "projection"), 1, GL_FALSE, projection.T)
-        glUniform3f(glGetUniformLocation(self.program, "viewPos"), camera_pos[0], camera_pos[1], camera_pos[2])
+    def set_camera(self, view, proj, cam_pos):
+        glUniformMatrix4fv(
+            glGetUniformLocation(self.program, "model"),
+            1, GL_FALSE, self.model.T
+        )
+        glUniformMatrix4fv(
+            glGetUniformLocation(self.program, "view"),
+            1, GL_FALSE, view.T
+        )
+        glUniformMatrix4fv(
+            glGetUniformLocation(self.program, "projection"),
+            1, GL_FALSE, proj.T
+        )
+
+        glUniform3f(glGetUniformLocation(self.program, "viewPos"), *cam_pos)
         glUniform3f(glGetUniformLocation(self.program, "lightPos"), 3.0, 5.0, 3.0)
         glUniform3f(glGetUniformLocation(self.program, "lightColor"), 1.0, 1.0, 1.0)
 
-    def set_material(self, object_color=(1.0, 1.0, 1.0), spec_strength=0.3, shininess=16.0):
-        glUniform3f(glGetUniformLocation(self.program, "objectColor"), *object_color)
-        glUniform1f(glGetUniformLocation(self.program, "specStrength"), float(spec_strength))
-        glUniform1f(glGetUniformLocation(self.program, "shininess"), float(shininess))
+    def set_material(self, color=(1.0, 1.0, 1.0), spec=0.3, shininess=16.0):
+        glUniform3f(glGetUniformLocation(self.program, "objectColor"), *color)
+        glUniform1f(glGetUniformLocation(self.program, "specStrength"), spec)
+        glUniform1f(glGetUniformLocation(self.program, "shininess"), shininess)
+
+    def use_wall(self):
+        self.active_tex = self.wall_tex
+        glBindTexture(GL_TEXTURE_2D, self.wall_tex)
+
+    def use_floor(self):
+        self.active_tex = self.floor_tex
+        glBindTexture(GL_TEXTURE_2D, self.floor_tex)
 
     def cleanup(self):
         glDeleteProgram(self.program)
-        glDeleteTextures(1, [self.texture])
+        glDeleteTextures(1, [self.wall_tex])
+        glDeleteTextures(1, [self.floor_tex])
