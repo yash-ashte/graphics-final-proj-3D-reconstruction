@@ -1,8 +1,6 @@
 import os
-
 import numpy as np
 from PIL import Image
-
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
 
@@ -93,9 +91,7 @@ class Renderer:
             compileShader(FRAGMENT_SHADER, GL_FRAGMENT_SHADER),
         )
 
-        self.model = np.eye(4, dtype=np.float32)
-
-        # start with a fallback so we always have something valid
+        self.model = np.eye(4)
         checker = self._make_checker()
         self.wall_tex = checker
         self.floor_tex = checker
@@ -170,8 +166,6 @@ class Renderer:
         if not cfg:
             print(f"[warn] unknown label '{label}', keeping current textures")
             return
-
-        # clean up old textures
         glDeleteTextures(1, [self.wall_tex])
         glDeleteTextures(1, [self.floor_tex])
 

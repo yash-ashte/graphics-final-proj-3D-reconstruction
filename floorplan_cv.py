@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 
-def _default_walls():
+def default():
     return [
         ((-4.0, -4.0), (4.0, -4.0)),
         ((4.0, -4.0), (4.0, 4.0)),
@@ -11,14 +11,9 @@ def _default_walls():
     ]
 
 
-def extract_wall_segments(image_path):
-    """
-    Returns a dict with:
-    - walls: list of 2D line segments [((x1, z1), (x2, z2)), ...]
-    - bounds: (min_x, max_x, min_z, max_z)
-    """
+def ext_walls(image_path):
     if not image_path:
-        walls = _default_walls()
+        walls = default()
         return {"walls": walls, "bounds": (-4.0, 4.0, -4.0, 4.0)}
 
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
@@ -27,18 +22,18 @@ def extract_wall_segments(image_path):
 
     h, w = img.shape
     _, binary = cv2.threshold(img, 180, 255, cv2.THRESH_BINARY_INV)
-    kernel = np.ones((3, 3), np.uint8)
+    kernel = np.ones((3, 3))
     clean = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
 
     lines = cv2.HoughLinesP(clean, 1, np.pi / 180.0, threshold=60, minLineLength=40, maxLineGap=10)
     if lines is None:
-        walls = _default_walls()
+        walls = default()
         return {"walls": walls, "bounds": (-4.0, 4.0, -4.0, 4.0)}
 
-    # Convert image coordinates into centered world space (X,Z).
     sx = 10.0 / max(float(w), 1.0)
     sz = 10.0 / max(float(h), 1.0)
     walls = []
+    
     for l in lines[:, 0]:
         x1, y1, x2, y2 = l
         wx1 = (x1 - w * 0.5) * sx

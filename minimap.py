@@ -1,63 +1,9 @@
 import os
-
 import cv2
 import numpy as np
-from OpenGL.GL import (
-    GL_ARRAY_BUFFER,
-    GL_BLEND,
-    GL_DEPTH_TEST,
-    GL_FALSE,
-    GL_FLOAT,
-    GL_ONE_MINUS_SRC_ALPHA,
-    GL_SRC_ALPHA,
-    GL_STATIC_DRAW,
-    GL_STREAM_DRAW,
-    GL_TEXTURE0,
-    GL_TEXTURE_2D,
-    GL_TEXTURE_MAG_FILTER,
-    GL_TEXTURE_MIN_FILTER,
-    GL_TRIANGLES,
-    GL_UNPACK_ALIGNMENT,
-    GL_VIEWPORT,
-    GL_LINEAR,
-    GL_RGB,
-    GL_UNSIGNED_BYTE,
-    GL_VERTEX_SHADER,
-    GL_FRAGMENT_SHADER,
-    GLint,
-    glActiveTexture,
-    glBindBuffer,
-    glBindTexture,
-    glBindVertexArray,
-    glBlendFunc,
-    glBufferData,
-    glDeleteBuffers,
-    glDeleteProgram,
-    glDeleteTextures,
-    glDeleteVertexArrays,
-    glDisable,
-    glDrawArrays,
-    glEnable,
-    glEnableVertexAttribArray,
-    glGenBuffers,
-    glGenTextures,
-    glGenVertexArrays,
-    glGetIntegerv,
-    glGetUniformLocation,
-    glPixelStorei,
-    glTexImage2D,
-    glTexParameteri,
-    glUniform1f,
-    glUniform1i,
-    glUniform3f,
-    glUniformMatrix4fv,
-    glUseProgram,
-    glVertexAttribPointer,
-    glViewport,
-)
+import OpenGL.GL as gl
 from OpenGL.GL.shaders import compileProgram, compileShader
 import ctypes
-
 
 def _ortho(left, right, bottom, top):
     m = np.zeros((4, 4), dtype=np.float32)
@@ -96,18 +42,16 @@ void main() {
 def _upload_rgb(tex):
     tex = np.ascontiguousarray(tex, dtype=np.uint8)
     h, w = tex.shape[:2]
-    prev = (GLint * 1)()
-    glGetIntegerv(GL_UNPACK_ALIGNMENT, prev)
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+    prev = (gl.GLint * 1)()
+    gl.glGetIntegerv(gl.GL_UNPACK_ALIGNMENT, prev)
+    gl.glPixelStorei(gl.GL_UNPACK_ALIGNMENT, 1)
     try:
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, tex)
+        gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGB, w, h, 0, gl.GL_RGB, gl.GL_UNSIGNED_BYTE, tex)
     finally:
-        glPixelStorei(GL_UNPACK_ALIGNMENT, int(prev[0]))
+        gl.glPixelStorei(gl.GL_UNPACK_ALIGNMENT, int(prev[0]))
 
 
 class Minimap:
-    """Corner picture of your floorplan file + dot at camera (X,Z), same mapping as floorplan_cv."""
-
     def __init__(self, image_path: str, size_px: int = 180, margin: int = 12):
         self.size_px = int(size_px)
         self.margin = int(margin)
@@ -119,68 +63,63 @@ class Minimap:
         self.vao_bg = self.vbo_bg = None
         self.vao_dot = self.vbo_dot = None
         self.loc = {}
-
         path = image_path.strip() if image_path else ""
         if not path or not os.path.isfile(path):
             return
         bgr = cv2.imread(path, cv2.IMREAD_COLOR)
         if bgr is None:
             return
-
         self.img_h, self.img_w = bgr.shape[:2]
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         flipped = cv2.flip(rgb, 0)
 
         self.prog = compileProgram(
-            compileShader(VERT, GL_VERTEX_SHADER),
-            compileShader(FRAG, GL_FRAGMENT_SHADER),
+            compileShader(VERT, gl.GL_VERTEX_SHADER),
+            compileShader(FRAG, gl.GL_FRAGMENT_SHADER),
         )
         self.loc = {
-            "ortho": glGetUniformLocation(self.prog, "ortho"),
-            "tex": glGetUniformLocation(self.prog, "tex"),
-            "solid": glGetUniformLocation(self.prog, "solid"),
-            "dotPass": glGetUniformLocation(self.prog, "dotPass"),
+            "ortho": gl.glGetUniformLocation(self.prog, "ortho"),
+            "tex": gl.glGetUniformLocation(self.prog, "tex"),
+            "solid": gl.glGetUniformLocation(self.prog, "solid"),
+            "dotPass": gl.glGetUniformLocation(self.prog, "dotPass"),
         }
 
-        self.tex = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, self.tex)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        self.tex = gl.glGenTextures(1)
+        gl.glBindTexture(gl.GL_TEXTURE_2D, self.tex)
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
         _upload_rgb(flipped)
-        glBindTexture(GL_TEXTURE_2D, 0)
+        gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
 
         s = float(self.size_px)
         bg = np.array(
             [0, 0, 0, 0, s, 0, 1, 0, s, s, 1, 1, 0, 0, 0, 0, s, s, 1, 1, 0, s, 0, 1],
             dtype=np.float32,
         )
-        self.vao_bg = glGenVertexArrays(1)
-        self.vbo_bg = glGenBuffers(1)
-        glBindVertexArray(self.vao_bg)
-        glBindBuffer(GL_ARRAY_BUFFER, self.vbo_bg)
-        glBufferData(GL_ARRAY_BUFFER, bg.nbytes, bg, GL_STATIC_DRAW)
+        self.vao_bg = gl.glGenVertexArrays(1)
+        self.vbo_bg = gl.glGenBuffers(1)
+        gl.glBindVertexArray(self.vao_bg)
+        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, self.vbo_bg)
+        gl.glBufferData(gl.GL_ARRAY_BUFFER, bg.nbytes, bg, gl.GL_STATIC_DRAW)
         st = 4 * bg.itemsize
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, st, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(1)
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, st, ctypes.c_void_p(2 * bg.itemsize))
-        glBindVertexArray(0)
-
-        self.vao_dot = glGenVertexArrays(1)
-        self.vbo_dot = glGenBuffers(1)
-        glBindVertexArray(self.vao_dot)
-        glBindBuffer(GL_ARRAY_BUFFER, self.vbo_dot)
-        glBufferData(GL_ARRAY_BUFFER, 6 * 4 * 4, None, GL_STREAM_DRAW)
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(1)
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(8))
-        glBindVertexArray(0)
-
+        gl.glEnableVertexAttribArray(0)
+        gl.glVertexAttribPointer(0, 2, gl.GL_FLOAT, gl.GL_FALSE, st, ctypes.c_void_p(0))
+        gl.glEnableVertexAttribArray(1)
+        gl.glVertexAttribPointer(1, 2, gl.GL_FLOAT, gl.GL_FALSE, st, ctypes.c_void_p(2 * bg.itemsize))
+        gl.glBindVertexArray(0)
+        self.vao_dot = gl.glGenVertexArrays(1)
+        self.vbo_dot = gl.glGenBuffers(1)
+        gl.glBindVertexArray(self.vao_dot)
+        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, self.vbo_dot)
+        gl.glBufferData(gl.GL_ARRAY_BUFFER, 6 * 4 * 4, None, gl.GL_STREAM_DRAW)
+        gl.glEnableVertexAttribArray(0)
+        gl.glVertexAttribPointer(0, 2, gl.GL_FLOAT, gl.GL_FALSE, 16, ctypes.c_void_p(0))
+        gl.glEnableVertexAttribArray(1)
+        gl.glVertexAttribPointer(1, 2, gl.GL_FLOAT, gl.GL_FALSE, 16, ctypes.c_void_p(8))
+        gl.glBindVertexArray(0)
         self.active = True
 
     def _uv(self, wx, wz):
-        # Inverse of floorplan_cv (image flipped for GL the same way as texture upload).
         iw, ih = float(self.img_w), float(self.img_h)
         sx, sz = 10.0 / max(iw, 1.0), 10.0 / max(ih, 1.0)
         u = wx / (iw * sx) + 0.5
@@ -190,31 +129,26 @@ class Minimap:
     def draw(self, camera_pos, fb_w, fb_h):
         if not self.active:
             return
-
         wx, wz = float(camera_pos[0]), float(camera_pos[2])
         u, v = self._uv(wx, wz)
         s = float(self.size_px)
         ortho = _ortho(0.0, s, 0.0, s)
         vp_x = max(fb_w - self.margin - self.size_px, 0)
         vp_y = self.margin
-
-        prev = (GLint * 4)()
-        glGetIntegerv(GL_VIEWPORT, prev)
-
-        glDisable(GL_DEPTH_TEST)
-        glEnable(GL_BLEND)
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-        glViewport(vp_x, vp_y, self.size_px, self.size_px)
-
-        glUseProgram(self.prog)
-        glUniformMatrix4fv(self.loc["ortho"], 1, GL_FALSE, ortho)
-        glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.tex)
-        glUniform1i(self.loc["tex"], 0)
-        glUniform1f(self.loc["dotPass"], 0.0)
-        glBindVertexArray(self.vao_bg)
-        glDrawArrays(GL_TRIANGLES, 0, 6)
-
+        prev = (gl.GLint * 4)()
+        gl.glGetIntegerv(gl.GL_VIEWPORT, prev)
+        gl.glDisable(gl.GL_DEPTH_TEST)
+        gl.glEnable(gl.GL_BLEND)
+        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+        gl.glViewport(vp_x, vp_y, self.size_px, self.size_px)
+        gl.glUseProgram(self.prog)
+        gl.glUniformMatrix4fv(self.loc["ortho"], 1, gl.GL_FALSE, ortho)
+        gl.glActiveTexture(gl.GL_TEXTURE0)
+        gl.glBindTexture(gl.GL_TEXTURE_2D, self.tex)
+        gl.glUniform1i(self.loc["tex"], 0)
+        gl.glUniform1f(self.loc["dotPass"], 0.0)
+        gl.glBindVertexArray(self.vao_bg)
+        gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6)
         r = max(s * 0.02, 2.5)
         cx, cy = u * s, v * s
         dot = np.array(
@@ -228,26 +162,25 @@ class Minimap:
             ],
             dtype=np.float32,
         )
-        glUniform1f(self.loc["dotPass"], 1.0)
-        glUniform3f(self.loc["solid"], 1.0, 0.15, 0.1)
-        glBindVertexArray(self.vao_dot)
-        glBindBuffer(GL_ARRAY_BUFFER, self.vbo_dot)
-        glBufferData(GL_ARRAY_BUFFER, dot.nbytes, dot, GL_STREAM_DRAW)
-        glDrawArrays(GL_TRIANGLES, 0, 6)
-
-        glBindVertexArray(0)
-        glBindTexture(GL_TEXTURE_2D, 0)
-        glUseProgram(0)
-        glDisable(GL_BLEND)
-        glEnable(GL_DEPTH_TEST)
-        glViewport(prev[0], prev[1], prev[2], prev[3])
+        gl.glUniform1f(self.loc["dotPass"], 1.0)
+        gl.glUniform3f(self.loc["solid"], 1.0, 0.15, 0.1)
+        gl.glBindVertexArray(self.vao_dot)
+        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, self.vbo_dot)
+        gl.glBufferData(gl.GL_ARRAY_BUFFER, dot.nbytes, dot, gl.GL_STREAM_DRAW)
+        gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6)
+        gl.glBindVertexArray(0)
+        gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+        gl.glUseProgram(0)
+        gl.glDisable(gl.GL_BLEND)
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glViewport(prev[0], prev[1], prev[2], prev[3])
 
     def cleanup(self):
         if not self.active:
             return
-        glDeleteBuffers(1, [self.vbo_bg])
-        glDeleteBuffers(1, [self.vbo_dot])
-        glDeleteVertexArrays(1, [self.vao_bg])
-        glDeleteVertexArrays(1, [self.vao_dot])
-        glDeleteTextures(1, [self.tex])
-        glDeleteProgram(self.prog)
+        gl.glDeleteBuffers(1, [self.vbo_bg])
+        gl.glDeleteBuffers(1, [self.vbo_dot])
+        gl.glDeleteVertexArrays(1, [self.vao_bg])
+        gl.glDeleteVertexArrays(1, [self.vao_dot])
+        gl.glDeleteTextures(1, [self.tex])
+        gl.glDeleteProgram(self.prog)
